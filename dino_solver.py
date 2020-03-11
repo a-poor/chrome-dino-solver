@@ -119,20 +119,20 @@ class DinoGame:
     def make_brain(self):
         m = Sequential()
         m.add(Dense(
-            16,
+            8,
             activation="relu",
             input_shape=(self.INPUT_DIM,)
         ))
         m.add(Dropout(0.2))
         m.add(Dense(
-            16,
+            8,
             activation="relu"
         ))
         m.add(Dropout(0.2))
-        # m.add(Dense(
-        #     16,
-        #     activation="relu"
-        # ))
+        m.add(Dense(
+            8,
+            activation="relu"
+        ))
         m.add(Dense(
             self.ACTION_DIM,
             activation='linear'
@@ -194,9 +194,11 @@ class DinoGame:
         self.action_hist[a] += 1
         return a
 
-    def replay(self,epochs=1,batch_size=32):
+    def replay(self,epochs=1,batch_size=128):
         for e in range(epochs):
             time.sleep(1)
+            data_in = []
+            data_out = []
             for b in range(batch_size):
                 # Pick a random memory state
                 i = np.random.randint(len(self.memory))
@@ -213,13 +215,13 @@ class DinoGame:
                     reward
                 ) = s
                 # Get the brain's current prediction
-                model_in = np.array([[
+                model_in = np.array([
                     tRexX,
                     tRexY,
                     obs1X,
                     obs1Y
-                ]])
-                pred = self.brain.predict(model_in)[0]
+                ])
+                pred = self.brain.predict(model_in.reshape((1,-1)))[0]
 
                 # NOTE: Add extra reward if not done
                 # and obstacle behind player
@@ -233,15 +235,18 @@ class DinoGame:
                 
                 # Update the reward
                 pred[int(action)] = reward
-                pred = pred.reshape((1,-1))
+                # pred = pred.reshape((1,-1))
 
-                # Retrain
-                self.brain.fit(
-                    model_in,
-                    pred,
-                    epochs=1,
-                    verbose=0
-                )
+                data_in.append(model_in)
+                data_out.append(pred)
+
+            # Retrain
+            self.brain.fit(
+                np.array(data_in),
+                np.array(data_out),
+                epochs=1,
+                verbose=0
+            )
 
     #### Run Training Session ####
 
@@ -253,6 +258,7 @@ class DinoGame:
             time.sleep(1)
             done = False
             mem_buff = []
+            self.epsilon = self.EPSILON_START # NOTE: restart every episode?
             while not done:
                 # Extract the positions
                 s = self.get_positions()
@@ -337,7 +343,7 @@ if __name__ == "__main__":
     try:
         runner = DinoGame()
         print("Starting game")
-        dists = runner.train(500)
+        dists = runner.train(50)
     finally:
         runner.driver.close()
         print("Done")
