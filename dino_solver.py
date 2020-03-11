@@ -34,6 +34,7 @@ NOTES:
 
 import time
 from collections import deque
+import sqlite3
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -87,6 +88,10 @@ class DinoGame:
     EPSILON_STOP = 0.01
     EPSILON_DECAY = 0.995
 
+    REWARD_DECAY = 0.75
+
+    DB_PATH = "dino_memory.db"
+
     @classmethod
     def load_brain(cls,model_path):
         return cls.__init__(load_model(model_path))
@@ -100,6 +105,23 @@ class DinoGame:
         time.sleep(1)
         self.move_jump()
         self.epsilon = self.EPSILON_START
+
+        self.db = sqlite3.connect(self.DB_PATH)
+        c = self.db.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS Memory (
+            crashed REAL,
+            distance REAL,
+            tRexX REAL,
+            tRexY REAL,
+            obs1X REAL,
+            obs1Y REAL,
+            last_tRexX REAL,
+            last_tRexY REAL,
+            last_obs1X REAL,
+            last_obs1Y REAL,
+            action REAL,
+            reward REAL
+        );""")
 
         self.memory = deque(maxlen=10_000_000)
         if brain is None:
@@ -171,14 +193,32 @@ class DinoGame:
     #### RL Functions ####
 
     def memorize(self,state_info,last_state_info,action,reward=1):
-        self.memory.append(np.concatenate((
+        d = np.concatenate((
             state_info,
             last_state_info,
             (
                 action,
                 reward
             )
-        )))
+        ))
+        c = self.db.cursor()
+        c.execute("""INSERT INTO Memory (
+            crashed,
+            distance,
+            tRexX, tRexY,
+            obs1X, obs1Y,
+            last_tRexX,
+            last_tRexY,
+            last_obs1X,
+            last_obs1Y,
+            action,
+            reward
+        ) VALUES (
+            ?,?,?,?,
+            ?,?,?,?,
+            ?,?,?,?
+        );""",d)
+        self.db.commit()
         return
 
     def get_action(self,state):
@@ -196,14 +236,15 @@ class DinoGame:
         return a
 
     def replay(self,epochs=1,batch_size=128):
+        c = self.db.cursor()
         for e in range(epochs):
             time.sleep(1)
             data_in = []
             data_out = []
             for b in range(batch_size):
                 # Pick a random memory state
-                i = np.random.randint(len(self.memory))
-                s = self.memory[i]
+                c.execute("""SELECT * FROM Memory ORDER BY Random() LIMIT 1;""")
+                s = np.array(c.fetchone())
                 # Unpack the data
                 (
                     _,
@@ -330,9 +371,8 @@ class DinoGame:
             
             
             # Update the past reward in mem_buff
-            REWARD_DECAY = 0.9
             for i in range(len(mem_buff)-2,-1,-1):
-                mem_buff[i][3] += mem_buff[i+1][3] * REWARD_DECAY
+                mem_buff[i][3] += mem_buff[i+1][3] * self.REWARD_DECAY
 
             # add those to the full memory
             for s, ls, action, reward in mem_buff:
