@@ -7,31 +7,18 @@ by Austin Poor
 
 NOTES:
 – Run for longer to see how it changes
-– save the memory to a SQLite DB so that it doesn't
-  need to re-learn everything every time
-– give it a past frame in addition to current (or more)
 – can you scale the inputs? (how would you handle)
 – use more/less layers? to improve training?
-– add in random actions (epsilon-greedy)
 
 
 – run multiple training sessions simultaneously
 – run training headless in the cloud?
 
-
-
-### This Version:
-– Limiting the number of enemies seen
-– Updating rewards
-  * zero reward for pass
-  * positive reward for jump
-– Creates queue for a single episode where reward can
-  be propagated backward before being added.
-
 """
 
 
 
+import os
 import time
 from collections import deque
 import sqlite3
@@ -62,35 +49,31 @@ class DinoGame:
             results.push(runn.distanceRan);
             results.push(runn.tRex.xPos);
             results.push(runn.tRex.yPos);
-            if (runn.horizon.obstacles.length > 0) {
-                results.push(runn.horizon.obstacles[0].xPos);
-                results.push(runn.horizon.obstacles[0].yPos);
-            } else {
-                results.push(500);
-                results.push(90);
+            for (let i = 0; i < 3; i++) {
+                if (runn.horizon.obstacles.length > i) {
+                    results.push(runn.horizon.obstacles[i].xPos);
+                    results.push(runn.horizon.obstacles[i].yPos);
+                } else {
+                    results.push(700);
+                    results.push(90);
+                }
             }
             return results;
-        })();""" 
+        })();"""
+    
 
-    # output from js: (
-    #     crashed?,
-    #     distRan,
-    #     tRex.X
-    #     tRex.Y,
-    #     obs.X,
-    #     obs.Y,
-    # )
-
-    INPUT_DIM = 4
+    INPUT_DIM = 8
     ACTION_DIM = 3
 
     EPSILON_START = 1.0
     EPSILON_STOP = 0.01
-    EPSILON_DECAY = 0.995
+    EPSILON_DECAY = 0.9995
 
     REWARD_DECAY = 0.75
 
     DB_PATH = "dino_memory.db"
+
+    SCREENSHOT_PATH = "./screenshots/" #NOTE: unfinished
 
     @classmethod
     def load_brain(cls,model_path):
@@ -100,6 +83,11 @@ class DinoGame:
     def __init__(self,brain=None):
         self.driver = webdriver.Chrome('./chromedriver')
         self.driver.get(self.URL)
+        self.driver.set_window_rect(
+            0,0,
+            960,540
+        )
+
         time.sleep(0.5)
         self.body = self.driver.find_element_by_tag_name("body")
         time.sleep(1)
@@ -108,20 +96,31 @@ class DinoGame:
 
         self.db = sqlite3.connect(self.DB_PATH)
         c = self.db.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS Memory (
+        c.execute("""CREATE TABLE IF NOT EXISTS Memory8 (
             crashed REAL,
             distance REAL,
             tRexX REAL,
             tRexY REAL,
             obs1X REAL,
             obs1Y REAL,
+            obs2X REAL,
+            obs2Y REAL,
+            obs3X REAL,
+            obs3Y REAL,
             last_tRexX REAL,
             last_tRexY REAL,
             last_obs1X REAL,
             last_obs1Y REAL,
+            last_obs2X REAL,
+            last_obs2Y REAL,
+            last_obs3X REAL,
+            last_obs3Y REAL,
             action REAL,
             reward REAL
         );""")
+
+        self.next_file_number = len(os.listdir(self.SCREENSHOT_PATH)) #NOTE: unfinished
+        # self.driver.save_screenshot("")
 
         self.memory = deque(maxlen=10_000_000)
         if brain is None:
@@ -202,18 +201,26 @@ class DinoGame:
             )
         ))
         c = self.db.cursor()
-        c.execute("""INSERT INTO Memory (
+        c.execute("""INSERT INTO Memory8 (
             crashed,
             distance,
             tRexX, tRexY,
             obs1X, obs1Y,
+            obs2X, obs2Y,
+            obs3X, obs3Y,
             last_tRexX,
             last_tRexY,
             last_obs1X,
             last_obs1Y,
+            last_obs2X,
+            last_obs2Y,
+            last_obs3X,
+            last_obs3Y,
             action,
             reward
         ) VALUES (
+            ?,?,?,?,
+            ?,?,?,?,
             ?,?,?,?,
             ?,?,?,?,
             ?,?,?,?
@@ -243,7 +250,7 @@ class DinoGame:
             data_out = []
             for b in range(batch_size):
                 # Pick a random memory state
-                c.execute("""SELECT * FROM Memory ORDER BY Random() LIMIT 1;""")
+                c.execute("""SELECT * FROM Memory8 ORDER BY Random() LIMIT 1;""")
                 s = np.array(c.fetchone())
                 # Unpack the data
                 (
@@ -253,10 +260,18 @@ class DinoGame:
                     tRexY,
                     obs1X,
                     obs1Y,
+                    obs2X,
+                    obs2Y,
+                    obs3X,
+                    obs3Y,
                     last_tRexX,
                     last_tRexY,
                     last_obs1X,
                     last_obs1Y,
+                    last_obs2X,
+                    last_obs2Y,
+                    last_obs3X,
+                    last_obs3Y,
                     action,
                     reward
                 ) = s
@@ -266,10 +281,18 @@ class DinoGame:
                     tRexY,
                     obs1X,
                     obs1Y,
+                    obs2X,
+                    obs2Y,
+                    obs3X,
+                    obs3Y,
                     last_tRexX,
                     last_tRexY,
                     last_obs1X,
-                    last_obs1Y
+                    last_obs1Y,
+                    last_obs2X,
+                    last_obs2Y,
+                    last_obs3X,
+                    last_obs3Y
                 ])
                 pred = self.brain.predict(model_in.reshape((1,-1)))[0]
 
@@ -302,13 +325,13 @@ class DinoGame:
 
     def train(self,n_episodes=5):
         final_dists = []
+        self.epsilon = self.EPSILON_START # NOTE: restart every episode?
         for episode in range(n_episodes):
             self.move_jump()
             started = False
             time.sleep(1)
             done = False
             mem_buff = []
-            self.epsilon = self.EPSILON_START # NOTE: restart every episode?
 
             last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
             while not done:
@@ -320,7 +343,11 @@ class DinoGame:
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y
+                    obs1Y,
+                    obs2X,
+                    obs2Y,
+                    obs3X,
+                    obs3Y
                 ) = s
                 if done and not started:
                     done = False
@@ -335,7 +362,11 @@ class DinoGame:
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y
+                    obs1Y,
+                    obs2X,
+                    obs2Y,
+                    obs3X,
+                    obs3Y
                 ))
                 full_state = np.concatenate((
                     state,
