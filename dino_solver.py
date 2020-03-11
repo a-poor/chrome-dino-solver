@@ -84,6 +84,10 @@ class DinoGame:
     INPUT_DIM = 8
     ACTION_DIM = 3
 
+    EPSILON_START = 1.0
+    EPSILON_STOP = 0.01
+    EPSILON_DECAY = 0.995
+
     @classmethod
     def load_brain(cls,model_path):
         return cls.__init__(load_model(model_path))
@@ -96,6 +100,7 @@ class DinoGame:
         self.body = self.driver.find_element_by_tag_name("body")
         time.sleep(1)
         self.move_jump()
+        self.epsilon = self.EPSILON_START
 
         self.memory = deque(maxlen=10_000_000)
         if brain is None:
@@ -177,8 +182,16 @@ class DinoGame:
         return
 
     def get_action(self,state):
-        pred = self.brain.predict(state.reshape((1,-1)))[0]
-        a = np.argmax(pred)
+        if np.random.random() < self.epsilon:
+            a = np.random.randint(3)
+        else:
+            pred = self.brain.predict(state.reshape((1,-1)))[0]
+            a = np.argmax(pred)
+        if self.epsilon > self.EPSILON_STOP:
+            self.epsilon = max(
+                self.EPSILON_STOP,
+                self.epsilon * self.EPSILON_DECAY
+            )
         self.action_hist[a] += 1
         return a
 
@@ -330,7 +343,7 @@ if __name__ == "__main__":
     try:
         runner = DinoGame()
         print("Starting game")
-        dists = runner.train(20)
+        dists = runner.train(500)
     finally:
         runner.driver.close()
         print("Done")
