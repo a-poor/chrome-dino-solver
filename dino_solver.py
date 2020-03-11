@@ -19,6 +19,15 @@ NOTES:
 – run training headless in the cloud?
 
 
+
+### This Version:
+– Limiting the number of enemies seen
+– Updating rewards
+  * zero reward for pass
+  * positive reward for jump
+– Creates queue for a single episode where reward can
+  be propagated backward before being added.
+
 """
 
 
@@ -52,18 +61,12 @@ class DinoGame:
             results.push(runn.distanceRan);
             results.push(runn.tRex.xPos);
             results.push(runn.tRex.yPos);
-            for (let i = 0; i < 3; i++) {
-                if (i < runn.horizon.obstacles.length) {
-                    results.push(
-                        runn.horizon.obstacles[i].xPos
-                    );
-                    results.push(
-                        runn.horizon.obstacles[i].yPos
-                    );
-                } else {
-                    results.push(500);
-                    results.push(90);
-                }
+            if (runn.horizon.obstacles.length > 0) {
+                results.push(runn.horizon.obstacles[0].xPos);
+                results.push(runn.horizon.obstacles[0].yPos);
+            } else {
+                results.push(500);
+                results.push(90);
             }
             return results;
         })();""" 
@@ -73,15 +76,11 @@ class DinoGame:
     #     distRan,
     #     tRex.X
     #     tRex.Y,
-    #     obs1.X,
-    #     obs1.Y,
-    #     obs2.X,
-    #     obs2.Y,
-    #     obs3.X,
-    #     obs3.Y
+    #     obs.X,
+    #     obs.Y,
     # )
 
-    INPUT_DIM = 8
+    INPUT_DIM = 4
     ACTION_DIM = 3
 
     EPSILON_START = 1.0
@@ -197,7 +196,6 @@ class DinoGame:
 
     def replay(self,epochs=1,batch_size=32):
         for e in range(epochs):
-            self.move_jump()
             time.sleep(1)
             for b in range(batch_size):
                 # Pick a random memory state
@@ -211,24 +209,16 @@ class DinoGame:
                     tRexY,
                     obs1X,
                     obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y,
                     action,
                     reward
                 ) = s
                 # Get the brain's current prediction
-                model_in = np.array([
+                model_in = np.array([[
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y
-                ])
+                    obs1Y
+                ]])
                 pred = self.brain.predict(model_in)[0]
 
                 # NOTE: Add extra reward if not done
@@ -242,12 +232,13 @@ class DinoGame:
                 #     reward += 0.9
                 
                 # Update the reward
-                pred[action] = reward
+                pred[int(action)] = reward
+                pred = pred.reshape((1,-1))
 
                 # Retrain
                 self.brain.fit(
                     model_in,
-                    [pred],
+                    pred,
                     epochs=1,
                     verbose=0
                 )
@@ -261,6 +252,7 @@ class DinoGame:
             started = False
             time.sleep(1)
             done = False
+            mem_buff = []
             while not done:
                 # Extract the positions
                 s = self.get_positions()
@@ -270,11 +262,7 @@ class DinoGame:
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y
+                    obs1Y
                 ) = s
                 if done and not started:
                     done = False
@@ -289,11 +277,7 @@ class DinoGame:
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y
+                    obs1Y
                 ))
                 # print("State shape:",state.shape)
                 action = self.get_action(state)
@@ -302,24 +286,38 @@ class DinoGame:
                 self.move(action)
 
                 # calculate reward
-                reward = 1
+                if done:
+                    reward = -10
+                else:
+                    reward = 0
+                    if action != 0:
+                        reward += 0 #-0.1
+                    if tRexX > obs1X:
+                        print("Good job! +5")
+                        reward += 5
+                    
 
                 # store that information
-                self.memorize(s,action,reward)
+                mem_buff.append([s,action,reward])
 
                 # Take a lil break
                 time.sleep(0.1) # NOTE: adjust this time?
             final_dists.append(dist)
             
-            CRASH_BACWARD_DEPTH = 30
-            CRASH_REWARD_DECAY = 0.85
-            CRASH_REWARD = -5
-            REWARD_MEMORY_POS = -1
-            for i in range(CRASH_BACWARD_DEPTH):
-                self.memory[-(1+i)][REWARD_MEMORY_POS] += (
-                    CRASH_REWARD * CRASH_REWARD_DECAY ** i
-                )
-            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:20.2f}")
+            
+            # Update the past reward in mem_buff
+            REWARD_DECAY = 0.9
+            for i in range(len(mem_buff)-2,-1,-1):
+                mem_buff[i][2] += mem_buff[i+1][2] * REWARD_DECAY
+
+            # add those to the full memory
+            for s, action, reward in mem_buff:
+                self.memorize(s,action,reward)
+
+            self.replay(5)
+
+
+            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | AVG REWARD: {sum(s[2] for s in mem_buff)/len(mem_buff):5.2f}")
         return final_dists
 
     
@@ -328,10 +326,6 @@ class DinoGame:
             self.brain,
             filepath
             )
-
-
-    def play(self):
-        raise NotImplementedError
 
 
 
@@ -348,31 +342,7 @@ if __name__ == "__main__":
         runner.driver.close()
         print("Done")
 
-    df = pd.DataFrame(
-        runner.memory,
-        columns=[
-            "done",
-            "dist",
-            "tRexX",
-            "tRexY",
-            "obs1X",
-            "obs1Y",
-            "obs2X",
-            "obs2Y",
-            "obs3X",
-            "obs3Y",
-            "action",
-            "reward"
-        ]
-    )
-
     runner.save_brain(f"models/brain_{dt_fmt}.h5")
-
-    with open(f"logs/log_{dt_fmt}.txt",'w') as f:
-        f.write(f"Best dist: {df.dist.max()}\n")
-        f.write(f"Avg reward: {df.reward.mean()}\n")
-        f.write("\n\nAction breakdown:\n")
-        f.write(str(df.action.value_counts()))
 
     plt.plot(dists)
     plt.title("tRex Distance Traveled")
