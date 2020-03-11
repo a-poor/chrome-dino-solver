@@ -121,7 +121,7 @@ class DinoGame:
         m.add(Dense(
             8,
             activation="relu",
-            input_shape=(self.INPUT_DIM,)
+            input_shape=(self.INPUT_DIM*2,)
         ))
         m.add(Dropout(0.2))
         m.add(Dense(
@@ -129,10 +129,10 @@ class DinoGame:
             activation="relu"
         ))
         m.add(Dropout(0.2))
-        m.add(Dense(
-            8,
-            activation="relu"
-        ))
+        # m.add(Dense(
+        #     8,
+        #     activation="relu"
+        # ))
         m.add(Dense(
             self.ACTION_DIM,
             activation='linear'
@@ -170,9 +170,10 @@ class DinoGame:
 
     #### RL Functions ####
 
-    def memorize(self,state_info,action,reward=1):
+    def memorize(self,state_info,last_state_info,action,reward=1):
         self.memory.append(np.concatenate((
             state_info,
+            last_state_info,
             (
                 action,
                 reward
@@ -211,6 +212,10 @@ class DinoGame:
                     tRexY,
                     obs1X,
                     obs1Y,
+                    last_tRexX,
+                    last_tRexY,
+                    last_obs1X,
+                    last_obs1Y,
                     action,
                     reward
                 ) = s
@@ -219,7 +224,11 @@ class DinoGame:
                     tRexX,
                     tRexY,
                     obs1X,
-                    obs1Y
+                    obs1Y,
+                    last_tRexX,
+                    last_tRexY,
+                    last_obs1X,
+                    last_obs1Y
                 ])
                 pred = self.brain.predict(model_in.reshape((1,-1)))[0]
 
@@ -259,6 +268,8 @@ class DinoGame:
             done = False
             mem_buff = []
             self.epsilon = self.EPSILON_START # NOTE: restart every episode?
+
+            last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
             while not done:
                 # Extract the positions
                 s = self.get_positions()
@@ -285,8 +296,12 @@ class DinoGame:
                     obs1X,
                     obs1Y
                 ))
+                full_state = np.concatenate((
+                    state,
+                    last_state
+                ))
                 # print("State shape:",state.shape)
-                action = self.get_action(state)
+                action = self.get_action(full_state)
 
                 # Make the move
                 self.move(action)
@@ -304,7 +319,10 @@ class DinoGame:
                     
 
                 # store that information
-                mem_buff.append([s,action,reward])
+                mem_buff.append([s,last_state,action,reward])
+
+                # pass back the last state
+                last_state = state
 
                 # Take a lil break
                 time.sleep(0.1) # NOTE: adjust this time?
@@ -314,11 +332,11 @@ class DinoGame:
             # Update the past reward in mem_buff
             REWARD_DECAY = 0.9
             for i in range(len(mem_buff)-2,-1,-1):
-                mem_buff[i][2] += mem_buff[i+1][2] * REWARD_DECAY
+                mem_buff[i][3] += mem_buff[i+1][3] * REWARD_DECAY
 
             # add those to the full memory
-            for s, action, reward in mem_buff:
-                self.memorize(s,action,reward)
+            for s, ls, action, reward in mem_buff:
+                self.memorize(s,ls,action,reward)
 
             self.replay(5)
 
