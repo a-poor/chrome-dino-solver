@@ -25,6 +25,7 @@ import sqlite3
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
 
 import numpy as np
 import pandas as pd
@@ -48,32 +49,61 @@ class DinoGame:
             results.push(runn.crashed? 1 : 0);
             results.push(runn.distanceRan);
             results.push(runn.tRex.xPos);
-            results.push(runn.tRex.yPos);
+            results.push((runn.tRex.yPos));
+            results.push(runn.currentSpeed);
             for (let i = 0; i < 3; i++) {
                 if (runn.horizon.obstacles.length > i) {
                     results.push(runn.horizon.obstacles[i].xPos);
-                    results.push(runn.horizon.obstacles[i].yPos);
+                    results.push((runn.horizon.obstacles[i].yPos));
+                    results.push(runn.horizon.obstacles[i].typeConfig.width);
+                    results.push(runn.horizon.obstacles[i].typeConfig.height);
                 } else {
-                    results.push(700);
+                    results.push(650);
                     results.push(90);
+                    results.push(0);
+                    results.push(0);
                 }
             }
             return results;
         })();"""
+
+    _ = """(
+            crashed,
+            distance,
+
+            tRexX,
+            tRexY,
+
+            speed,
+
+            o1X,
+            o1Y,
+            o1W,
+            o1H,
+
+            o2X,
+            o2Y,
+            o2W,
+            o2H,
+
+            o3X,
+            o3Y,
+            o3W,
+            o3H
+        )"""
     
 
-    INPUT_DIM = 8
+    INPUT_DIM = 30
     ACTION_DIM = 3
 
     EPSILON_START = 1.0
     EPSILON_STOP = 0.01
     EPSILON_DECAY = 0.9995
 
-    REWARD_DECAY = 0.75
+    REWARD_DECAY = 0.5
 
-    DB_PATH = "dino_memory.db"
-
-    SCREENSHOT_PATH = "./screenshots/" #NOTE: unfinished
+    # DB_PATH = "dino_memory2.db"
+    DB_PATH = "dino_mem.db"
 
     @classmethod
     def load_brain(cls,model_path):
@@ -81,12 +111,17 @@ class DinoGame:
 
 
     def __init__(self,brain=None):
-        self.driver = webdriver.Chrome('./chromedriver')
-        self.driver.get(self.URL)
+        chrome_options = Options()
+        chrome_options.add_argument("disable-infobars")
+        self.driver = webdriver.Chrome(
+            './chromedriver',
+            options=chrome_options
+            )
         self.driver.set_window_rect(
             0,0,
             960,540
         )
+        self.driver.get(self.URL)
 
         time.sleep(0.5)
         self.body = self.driver.find_element_by_tag_name("body")
@@ -96,31 +131,53 @@ class DinoGame:
 
         self.db = sqlite3.connect(self.DB_PATH)
         c = self.db.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS Memory8 (
+        c.execute("""CREATE TABLE IF NOT EXISTS Memory (
             crashed REAL,
             distance REAL,
+
             tRexX REAL,
             tRexY REAL,
+
+            speed REAL,
+
             obs1X REAL,
             obs1Y REAL,
+            obs1W REAL,
+            obs1H REAL,
+
             obs2X REAL,
             obs2Y REAL,
+            obs2W REAL,
+            obs2H REAL,
+
             obs3X REAL,
             obs3Y REAL,
+            obs3W REAL,
+            obs3H REAL,
+
             last_tRexX REAL,
             last_tRexY REAL,
+
+            last_speed REAL,
+
             last_obs1X REAL,
             last_obs1Y REAL,
+            last_obs1W REAL,
+            last_obs1H REAL,
+
             last_obs2X REAL,
             last_obs2Y REAL,
+            last_obs2W REAL,
+            last_obs2H REAL,
+
             last_obs3X REAL,
             last_obs3Y REAL,
+            last_obs3W REAL,
+            last_obs3H REAL,
+
             action REAL,
             reward REAL
         );""")
-
-        self.next_file_number = len(os.listdir(self.SCREENSHOT_PATH)) #NOTE: unfinished
-        # self.driver.save_screenshot("")
 
         self.memory = deque(maxlen=10_000_000)
         if brain is None:
@@ -140,20 +197,20 @@ class DinoGame:
     def make_brain(self):
         m = Sequential()
         m.add(Dense(
-            8,
+            32,
             activation="relu",
-            input_shape=(self.INPUT_DIM*2,)
+            input_shape=(self.INPUT_DIM,)
         ))
         m.add(Dropout(0.2))
         m.add(Dense(
-            8,
+            32,
             activation="relu"
         ))
         m.add(Dropout(0.2))
-        # m.add(Dense(
-        #     8,
-        #     activation="relu"
-        # ))
+        m.add(Dense(
+            32,
+            activation="relu"
+        ))
         m.add(Dense(
             self.ACTION_DIM,
             activation='linear'
@@ -191,7 +248,7 @@ class DinoGame:
 
     #### RL Functions ####
 
-    def memorize(self,state_info,last_state_info,action,reward=1):
+    def memorize(self,state_info,last_state_info,action,reward):
         d = np.concatenate((
             state_info,
             last_state_info,
@@ -201,28 +258,59 @@ class DinoGame:
             )
         ))
         c = self.db.cursor()
-        c.execute("""INSERT INTO Memory8 (
+        c.execute("""INSERT INTO Memory (
             crashed,
             distance,
-            tRexX, tRexY,
-            obs1X, obs1Y,
-            obs2X, obs2Y,
-            obs3X, obs3Y,
+
+            tRexX,
+            tRexY,
+
+            speed,
+
+            obs1X,
+            obs1Y,
+            obs1W,
+            obs1H,
+
+            obs2X,
+            obs2Y,
+            obs2W,
+            obs2H,
+
+            obs3X,
+            obs3Y,
+            obs3W,
+            obs3H,
+
             last_tRexX,
             last_tRexY,
+
+            last_speed,
+
             last_obs1X,
             last_obs1Y,
+            last_obs1W,
+            last_obs1H,
+
             last_obs2X,
             last_obs2Y,
+            last_obs2W,
+            last_obs2H,
+
             last_obs3X,
             last_obs3Y,
+            last_obs3W,
+            last_obs3H,
+
             action,
             reward
         ) VALUES (
-            ?,?,?,?,
-            ?,?,?,?,
-            ?,?,?,?,
-            ?,?,?,?,
+            ?,?,?,?,?,
+            ?,?,?,?,?,
+            ?,?,?,?,?,
+            ?,?,?,?,?,
+            ?,?,?,?,?,
+            ?,?,?,?,?,
             ?,?,?,?
         );""",d)
         self.db.commit()
@@ -250,61 +338,15 @@ class DinoGame:
             data_out = []
             for b in range(batch_size):
                 # Pick a random memory state
-                c.execute("""SELECT * FROM Memory8 ORDER BY Random() LIMIT 1;""")
+                c.execute("""SELECT * FROM Memory ORDER BY Random() LIMIT 1;""")
                 s = np.array(c.fetchone())
-                # Unpack the data
-                (
-                    _,
-                    _,
-                    tRexX,
-                    tRexY,
-                    obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y,
-                    last_tRexX,
-                    last_tRexY,
-                    last_obs1X,
-                    last_obs1Y,
-                    last_obs2X,
-                    last_obs2Y,
-                    last_obs3X,
-                    last_obs3Y,
-                    action,
-                    reward
-                ) = s
-                # Get the brain's current prediction
-                model_in = np.array([
-                    tRexX,
-                    tRexY,
-                    obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y,
-                    last_tRexX,
-                    last_tRexY,
-                    last_obs1X,
-                    last_obs1Y,
-                    last_obs2X,
-                    last_obs2Y,
-                    last_obs3X,
-                    last_obs3Y
-                ])
-                pred = self.brain.predict(model_in.reshape((1,-1)))[0]
 
-                # NOTE: Add extra reward if not done
-                # and obstacle behind player
-                # reward = 1
-                # if crashed:
-                #     reward = -5
-                # else: 
-                #     # NOTE: This is where we'll add
-                #     # the predicted future reward
-                #     reward += 0.9
+                # Unpack the data
+                action, reward = s[-2:]
+
+                # Get the brain's current prediction
+                model_in = np.array(s[2:-2])
+                pred = self.brain.predict(model_in.reshape((1,-1)))[0]
                 
                 # Update the reward
                 pred[int(action)] = reward
@@ -337,18 +379,10 @@ class DinoGame:
             while not done:
                 # Extract the positions
                 s = self.get_positions()
-                (
-                    done,
-                    dist,
-                    tRexX,
-                    tRexY,
-                    obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y
-                ) = s
+                done, dist = s[:2]
+                tRexX = s[2]
+                obs1X = s[5]
+                
                 if done and not started:
                     done = False
                     self.move_jump()
@@ -358,16 +392,7 @@ class DinoGame:
                     started = True
                 
                 # Choose an action
-                state = np.array((
-                    tRexX,
-                    tRexY,
-                    obs1X,
-                    obs1Y,
-                    obs2X,
-                    obs2Y,
-                    obs3X,
-                    obs3Y
-                ))
+                state = np.array(s[2:])
                 full_state = np.concatenate((
                     state,
                     last_state
@@ -388,6 +413,7 @@ class DinoGame:
                     if tRexX > obs1X:
                         print("Good job! +5")
                         reward += 5
+                        # print(s)
                     
 
                 # store that information
@@ -432,7 +458,7 @@ if __name__ == "__main__":
     try:
         runner = DinoGame()
         print("Starting game")
-        dists = runner.train(50)
+        dists = runner.train(500)
     finally:
         runner.driver.close()
         print("Done")
