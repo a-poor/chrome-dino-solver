@@ -21,6 +21,7 @@ class DinoGame:
             results.push(runn.distanceRan);
             results.push(runn.tRex.xPos);
             results.push(runn.tRex.yPos);
+            results.push(runn.currentSpeed);
             for (let i = 0; i < 3; i++) {
                 if (i < runn.horizon.obstacles.length) {
                     results.push(
