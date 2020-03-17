@@ -66,51 +66,37 @@ class DinoGame:
             return results;
         })();"""
 
-    _ = """(
-            crashed,
-            distance,
+    # (
+    #     crashed,
+    #     distance,
 
-            tRexX,
-            tRexY,
+    #     tRexX,
+    #     tRexY,
 
-            speed,
+    #     speed,
 
-            o1X,
-            o1Y,
-            o1W,
-            o1H,
+    #     o1X,
+    #     o1Y,
+    #     o1W,
+    #     o1H,
 
-            o2X,
-            o2Y,
-            o2W,
-            o2H,
+    #     o2X,
+    #     o2Y,
+    #     o2W,
+    #     o2H,
 
-            o3X,
-            o3Y,
-            o3W,
-            o3H
-        )"""
-    
-
-    INPUT_DIM = 30
-    ACTION_DIM = 3
-
-    EPSILON_START = 1.0
-    EPSILON_STOP = 0.01
-    EPSILON_DECAY = 0.9995
-
-    REWARD_DECAY = 0.5
-
-    # DB_PATH = "dino_memory2.db"
-    DB_PATH = "dino_mem.db"
+    #     o3X,
+    #     o3Y,
+    #     o3W,
+    #     o3H
+    # )
 
 
-    def __init__(self,jt_min=-50,jt_max=600,n_steps=20,n_tests=10):
-        self.jt_min = jt_min
-        self.jt_max = jt_max
-        self.n_steps = n_steps
+    def __init__(self, jt_vals, dt_vals, n_tests=10):
+        self.jt_vals = jt_vals
+        self.dt_vals = dt_vals
         self.n_tests = n_tests
-        self.threshold = self.jt_max
+        self.threshold = None
         self.thresh_data = {}
 
         chrome_options = Options()
@@ -129,8 +115,7 @@ class DinoGame:
         self.body = self.driver.find_element_by_tag_name("body")
         time.sleep(1)
         self.move_jump()
-
-        self.memory = deque(maxlen=10_000_000)
+        
         return
 
     def __del__(self):
@@ -153,7 +138,7 @@ class DinoGame:
             raise "ERROR! I don't know what move that is: '%s'" % m
 
     def move_jump(self):
-        self.body.send_keys(Keys.UP)
+        self.body.send_keys(Keys.SPACE)
 
     def move_duck(self):
         self.body.send_keys(Keys.DOWN)
@@ -166,9 +151,14 @@ class DinoGame:
 
     #### RL Functions ####
 
-    def get_action(self,current,last):
-        if (current[3] <= self.threshold): # and (last[3] > self.threshold):
-            return 1
+    def get_action(self,current,last,jump_threshold,duck_threshold):
+        if current[3] < jump_threshold:
+            if current[4] < duck_threshold:
+                # print("Ducking...")
+                return 2
+            else:
+                # print("Jumping...")
+                return 1
         else:
             return 0
 
@@ -176,57 +166,53 @@ class DinoGame:
 
     def train(self,n_episodes=5):
         final_dists = []
-        self.epsilon = self.EPSILON_START # NOTE: restart every episode?
-        thresolds = np.linspace(
-            self.jt_min,
-            self.jt_max,
-            self.n_steps
-            )
-        for th in thresolds:
-            self.threshold = th
-            print("Testing thresold: ", th, "  , ", self.n_tests, " times")
-            for episode in range(self.n_tests):
-                self.move_jump()
-                started = False
-                time.sleep(1)
-                done = False
 
-                last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
-                while not done:
-                    # Extract the positions
-                    s = self.get_positions()
-                    done, dist = s[:2]
-                    tRexX = s[2]
-                    obs1X = s[5]
+        total_tests = len(self.jt_vals) * len(self.dt_vals) * self.n_tests
+        current_test = 0
+        for jth in self.jt_vals:
+            for dth in self.dt_vals:
+                print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} for {self.n_tests} tests")
+                for episode in range(self.n_tests):
+                    self.move_jump()
+                    started = False
+                    time.sleep(1)
+                    done = False
+
+                    last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
+                    while not done:
+                        # Extract the positions
+                        s = self.get_positions()
+                        done, dist = s[:2]
+                        
+                        if done and not started:
+                            done = False
+                            self.move_jump()
+                            time.sleep(0.5)
+                            continue
+                        elif not started:
+                            started = True
+                        
+                        # Choose an action
+                        state = np.array(s[2:])
+
+                        # print("State shape:",state.shape)
+                        action = self.get_action(state,last_state,jth,dth)
+
+                        # Make the move
+                        self.move(action)
+
+                        # pass back the last state
+                        last_state = state
+
+                        # Take a lil break
+                        time.sleep(0.1)
                     
-                    if done and not started:
-                        done = False
-                        self.move_jump()
-                        time.sleep(0.5)
-                        continue
-                    elif not started:
-                        started = True
-                    
-                    # Choose an action
-                    state = np.array(s[2:])
-
-                    # print("State shape:",state.shape)
-                    action = self.get_action(state,last_state)
-
-                    # Make the move
-                    self.move(action)
-
-                    # pass back the last state
-                    last_state = state
-
-                    # Take a lil break
-                    time.sleep(0.1) # NOTE: adjust this time?
-
-                final_dists.append(dist)
-                self.thresh_data[self.threshold] = self.thresh_data.get(self.threshold,[]) + [dist]
-                print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | THRESOLD: {th}")
+                    current_test += 1
+                    final_dists.append(dist)
+                    params = (jth,dth)
+                    self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
+                    print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f}")
         return final_dists
-
 
 
     
@@ -234,16 +220,32 @@ if __name__ == "__main__":
     print("Program starting")
     print("building dino...")
     try:
-        runner = DinoGame(jt_min=0,jt_max=400,n_steps=150,n_tests=10)
+        runner = DinoGame(
+            jt_vals=np.linspace(150,190,5),
+            dt_vals=np.linspace(60,80,5),
+            n_tests=5
+            )
         print("Starting game")
         dists = runner.train(500)
     finally:
         runner.driver.close()
         print("Done")
 
-    sns.scatterplot(*zip(*[(k,sum(v)/len(v)) for k, v in runner.thresh_data.items()]))                                                
+    # sns.scatterplot(*zip(*[(k,sum(v)/len(v)) for k, v in runner.thresh_data.items()]))
+    df = pd.DataFrame(
+        np.zeros((
+            len(runner.jt_vals),
+            len(runner.dt_vals)
+        )),
+        columns=runner.dt_vals,
+        index=runner.jt_vals
+    )
+    for (j,d), vals in runner.thresh_data.items():
+        df.loc[j,d] = np.mean(vals)
+    sns.heatmap(df)
+    plt.title("Chrome Dino Game\nAverage Distance Hyperperameter Grid Search")
+    plt.xlabel("Duck Threshold (\"Vertical\")")
+    plt.ylabel("Jump Threshold (\"Horizontal\")")
     plt.show()
-    input("Press enter to quit")
-    plt.close()
 
 
