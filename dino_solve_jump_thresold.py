@@ -169,6 +169,9 @@ class DinoGame:
 
         total_tests = len(self.jt_vals) * len(self.dt_vals) * self.n_tests
         current_test = 0
+
+        dist_hist = []
+
         for jth in self.jt_vals:
             for dth in self.dt_vals:
                 print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} for {self.n_tests} tests")
@@ -183,6 +186,12 @@ class DinoGame:
                         # Extract the positions
                         s = self.get_positions()
                         done, dist = s[:2]
+                        speed = s[4]
+
+                        dist_hist.append((
+                            dist,
+                            speed
+                        ))
                         
                         if done and not started:
                             done = False
@@ -212,6 +221,11 @@ class DinoGame:
                     params = (jth,dth)
                     self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
                     print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f}")
+
+        dx, dy = zip(*dist_hist)
+        sns.scatterplot(dx,dy)
+        plt.show()
+        input()
         return final_dists
 
 
@@ -221,9 +235,9 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(150,190,5),
-            dt_vals=np.linspace(60,80,5),
-            n_tests=5
+            jt_vals=np.linspace(170,180,3),
+            dt_vals=[75],
+            n_tests=1
             )
         print("Starting game")
         dists = runner.train(500)
