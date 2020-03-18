@@ -92,9 +92,10 @@ class DinoGame:
     # )
 
 
-    def __init__(self, jt_vals, dt_vals, n_tests=10):
+    def __init__(self, jt_vals, dt_vals, jt_deltas, n_tests=10):
         self.jt_vals = jt_vals
         self.dt_vals = dt_vals
+        self.jt_deltas = jt_deltas
         self.n_tests = n_tests
         self.threshold = None
         self.thresh_data = {}
@@ -167,65 +168,73 @@ class DinoGame:
     def train(self,n_episodes=5):
         final_dists = []
 
-        total_tests = len(self.jt_vals) * len(self.dt_vals) * self.n_tests
+        total_tests = len(self.jt_vals) * len(self.dt_vals) * len(self.jt_deltas) * self.n_tests
         current_test = 0
 
         dist_hist = []
 
         for jth in self.jt_vals:
             for dth in self.dt_vals:
-                print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} for {self.n_tests} tests")
-                for episode in range(self.n_tests):
-                    self.move_jump()
-                    started = False
-                    time.sleep(1)
-                    done = False
+                for jtd in self.jt_deltas:
+                    print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} and jump threshold delta = {jtd} for {self.n_tests} tests")
+                    for episode in range(self.n_tests):
+                        self.move_jump()
+                        started = False
+                        time.sleep(1)
+                        done = False
 
-                    last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
-                    while not done:
-                        # Extract the positions
-                        s = self.get_positions()
-                        done, dist = s[:2]
-                        speed = s[4]
+                        last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
+                        time_step = 0
+                        while not done:
+                            # Extract the positions
+                            s = self.get_positions()
+                            done, dist = s[:2]
+                            speed = s[4]
 
-                        dist_hist.append((
-                            dist,
-                            speed
-                        ))
+                            dist_hist.append((
+                                dist,
+                                speed
+                            ))
+                            
+                            if done and not started:
+                                done = False
+                                self.move_jump()
+                                time.sleep(0.5)
+                                continue
+                            elif not started:
+                                started = True
+                            
+                            # Choose an action
+                            state = np.array(s[2:])
+
+                            # print("State shape:",state.shape)
+                            action = self.get_action(
+                                state,
+                                last_state,
+                                jth + time_step * jtd,
+                                dth
+                                )
+
+                            # Make the move
+                            self.move(action)
+
+                            # pass back the last state
+                            last_state = state
+
+                            # Take a lil break
+                            time.sleep(0.1)
+
+                            time_step += 1
                         
-                        if done and not started:
-                            done = False
-                            self.move_jump()
-                            time.sleep(0.5)
-                            continue
-                        elif not started:
-                            started = True
-                        
-                        # Choose an action
-                        state = np.array(s[2:])
-
-                        # print("State shape:",state.shape)
-                        action = self.get_action(state,last_state,jth,dth)
-
-                        # Make the move
-                        self.move(action)
-
-                        # pass back the last state
-                        last_state = state
-
-                        # Take a lil break
-                        time.sleep(0.1)
-                    
-                    current_test += 1
-                    final_dists.append(dist)
-                    params = (jth,dth)
-                    self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
-                    print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f}")
-
-        dx, dy = zip(*dist_hist)
-        sns.scatterplot(dx,dy)
-        plt.show()
-        input()
+                        current_test += 1
+                        final_dists.append(dist)
+                        params = (jth,dth,jtd)
+                        self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
+                        print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f} | TIME STEPS: {time_step}")
+        # dx, dy = zip(*dist_hist)
+        # sns.scatterplot(dx,dy)
+        # plt.show()
+        # input()
         return final_dists
 
 
@@ -235,9 +244,10 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(170,180,3),
+            jt_vals=[140],
             dt_vals=[75],
-            n_tests=1
+            jt_deltas=[0.075],
+            n_tests=10
             )
         print("Starting game")
         dists = runner.train(500)
@@ -249,17 +259,17 @@ if __name__ == "__main__":
     df = pd.DataFrame(
         np.zeros((
             len(runner.jt_vals),
-            len(runner.dt_vals)
+            len(runner.jt_deltas)
         )),
-        columns=runner.dt_vals,
+        columns=runner.jt_deltas,
         index=runner.jt_vals
     )
-    for (j,d), vals in runner.thresh_data.items():
-        df.loc[j,d] = np.mean(vals)
+    for (jt,dt,jd), vals in runner.thresh_data.items():
+        df.loc[jt,jd] = np.mean(vals)
     sns.heatmap(df)
     plt.title("Chrome Dino Game\nAverage Distance Hyperperameter Grid Search")
-    plt.xlabel("Duck Threshold (\"Vertical\")")
-    plt.ylabel("Jump Threshold (\"Horizontal\")")
+    plt.xlabel("Jump Delta")
+    plt.ylabel("Jump Threshold")
     plt.show()
 
 
