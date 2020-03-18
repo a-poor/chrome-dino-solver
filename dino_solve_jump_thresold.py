@@ -116,6 +116,7 @@ class DinoGame:
         self.body = self.driver.find_element_by_tag_name("body")
         time.sleep(1)
         self.move_jump()
+        self.driver.execute_script("(new Runner()).playCount = 100;")
         
         return
 
@@ -155,10 +156,8 @@ class DinoGame:
     def get_action(self,current,last,jump_threshold,duck_threshold):
         if current[3] < jump_threshold:
             if current[4] < duck_threshold:
-                # print("Ducking...")
-                return 2
+                return 0
             else:
-                # print("Jumping...")
                 return 1
         else:
             return 0
@@ -178,6 +177,7 @@ class DinoGame:
                 for jtd in self.jt_deltas:
                     print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} and jump threshold delta = {jtd} for {self.n_tests} tests")
                     for episode in range(self.n_tests):
+                        dist_hist.append([])
                         self.move_jump()
                         started = False
                         time.sleep(1)
@@ -191,7 +191,7 @@ class DinoGame:
                             done, dist = s[:2]
                             speed = s[4]
 
-                            dist_hist.append((
+                            dist_hist[-1].append((
                                 dist,
                                 speed
                             ))
@@ -231,8 +231,9 @@ class DinoGame:
                         params = (jth,dth,jtd)
                         self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
                         print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f} | TIME STEPS: {time_step}")
-        # dx, dy = zip(*dist_hist)
-        # sns.scatterplot(dx,dy)
+        # for dh in dist_hist:
+        #     dx, dy = zip(*dh)
+        #     sns.scatterplot(dx,dy)
         # plt.show()
         # input()
         return final_dists
@@ -244,10 +245,10 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=[140],
+            jt_vals=np.linspace(130,150,5),
             dt_vals=[75],
-            jt_deltas=[0.075],
-            n_tests=10
+            jt_deltas=np.linspace(0.1,0.05,5),
+            n_tests=3
             )
         print("Starting game")
         dists = runner.train(500)
