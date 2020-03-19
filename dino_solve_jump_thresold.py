@@ -66,30 +66,6 @@ class DinoGame:
             return results;
         })();"""
 
-    # (
-    #     crashed,
-    #     distance,
-
-    #     tRexX,
-    #     tRexY,
-
-    #     speed,
-
-    #     o1X,
-    #     o1Y,
-    #     o1W,
-    #     o1H,
-
-    #     o2X,
-    #     o2Y,
-    #     o2W,
-    #     o2H,
-
-    #     o3X,
-    #     o3Y,
-    #     o3W,
-    #     o3H
-    # )
 
 
     def __init__(self, jt_vals, dt_vals, jt_deltas, n_tests=10):
