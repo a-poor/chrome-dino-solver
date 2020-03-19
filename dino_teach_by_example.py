@@ -65,6 +65,17 @@ class DinoGame:
             return results;
         })();"""
 
+    draw_thresold_script = """
+    (() => {
+        let r = new Runner();
+        let c = r.canvasCtx;
+        c.beginPath();
+        c.moveTo(%s,0);
+        c.lineTo(%s,0);
+        c.stroke();
+    })();
+    """
+
     columns = [
         "crashed",
         "distance",
@@ -114,10 +125,11 @@ class DinoGame:
         );"""
 
 
-    def __init__(self, jt_vals, dt_vals, jt_deltas, n_tests=10):
+    def __init__(self, jt_vals, dt_vals, jt_deltas, st_vals, n_tests=10):
         self.jt_vals = jt_vals
         self.dt_vals = dt_vals
         self.jt_deltas = jt_deltas
+        self.st_vals = st_vals
         self.n_tests = n_tests
         self.threshold = None
         self.thresh_data = {}
@@ -175,6 +187,10 @@ class DinoGame:
     def get_positions(self):
         return self.driver.execute_script(self.FN)
 
+    def draw_thresold(self,n):
+        pass
+        # self.driver.execute_script(self.draw_thresold_script % (n,n))
+
     #### RL Functions ####
 
     def get_action(self,current,last,jump_threshold,duck_threshold):
@@ -193,7 +209,7 @@ class DinoGame:
             if s[0]:
                 r = -10
             elif s[3] < 0:
-                r = 1
+                r = 5
             else:
                 r = 0
             r += last_r * REWARD_DECAY
@@ -230,16 +246,15 @@ class DinoGame:
                     ?,?,?,?,?,
                     ?,?,?,?
                 )""",
-                s + [a, r]
+                list(map(float,s + [a, r]))
                 )
         self.db.commit()
 
     #### Run Training Session ####
-
     def train(self,n_episodes=5):
         final_dists = []
 
-        total_tests = len(self.jt_vals) * len(self.dt_vals) * len(self.jt_deltas) * self.n_tests
+        total_tests = len(self.jt_vals) * len(self.dt_vals) * len(self.jt_deltas) * len(self.st_vals) * self.n_tests
         current_test = 0
 
         dist_hist = []
@@ -247,73 +262,74 @@ class DinoGame:
         for jth in self.jt_vals:
             for dth in self.dt_vals:
                 for jtd in self.jt_deltas:
-                    print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} and jump threshold delta = {jtd} for {self.n_tests} tests")
-                    for episode in range(self.n_tests):
-                        dist_hist.append([])
-                        self.move_jump()
-                        started = False
-                        time.sleep(1)
-                        done = False
+                    for st in self.st_vals:
+                        print(f"Testing jump thresold = {jth:.2f} and duck threshold = {dth:.2f} and jump threshold delta = {jtd} sleep time = {st} for {self.n_tests} tests")
+                        for episode in range(self.n_tests):
+                            dist_hist.append([])
+                            self.move_jump()
+                            started = False
+                            time.sleep(1)
+                            done = False
 
-                        last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
-                        time_step = 0
+                            last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
+                            time_step = 0
 
-                        state_history = []
-                        action_history = []
+                            state_history = []
+                            action_history = []
 
-                        while not done:
-                            # Extract the positions
-                            s = self.get_positions()
-                            done, dist = s[:2]
-                            speed = s[4]
+                            while not done:
+                                # Extract the positions
+                                s = self.get_positions()
+                                done, dist = s[:2]
+                                speed = s[4]
 
-                            dist_hist[-1].append((
-                                dist,
-                                speed
-                            ))
-                            
-                            if done and not started:
-                                done = False
-                                self.move_jump()
-                                time.sleep(0.5)
-                                continue
-                            elif not started:
-                                started = True
-                            
-                            # Choose an action
-                            state = np.array(s[2:])
+                                dist_hist[-1].append((
+                                    dist,
+                                    speed
+                                ))
+                                
+                                if done and not started:
+                                    done = False
+                                    self.move_jump()
+                                    time.sleep(0.5)
+                                    continue
+                                elif not started:
+                                    started = True
+                                
+                                # Choose an action
+                                state = np.array(s[2:])
 
-                            # print("State shape:",state.shape)
-                            action = self.get_action(
-                                state,
-                                last_state,
-                                jth + time_step * jtd,
-                                dth
-                                )
+                                # print("State shape:",state.shape)
+                                action = float(self.get_action(
+                                    state,
+                                    last_state,
+                                    jth + time_step * jtd,
+                                    dth
+                                    ))
 
-                            # Make the move
-                            self.move(action)
+                                # Make the move
+                                self.move(action)
 
-                            # Remember it
-                            state_history.append(s)
-                            action_history.append(action)
+                                # draw the v threshold
+                                self.draw_thresold(jth)
 
-                            # pass back the last state
-                            last_state = state
+                                # Remember it
+                                state_history.append(s)
+                                action_history.append(action)
 
-                            # # Take a lil break
-                            # time.sleep(0.1)
+                                # pass back the last state
+                                last_state = state
 
-                            time_step += 1
+                                # # Take a lil break
+                                time.sleep(st)
 
-                        rewards = self.get_rewards(state_history)
-                        self.store_history(state_history, action_history, rewards)
+                                time_step += 1
+
+                            rewards = self.get_rewards(state_history)
+                            self.store_history(state_history, action_history, rewards)
                         
-                        current_test += 1
-                        final_dists.append(dist)
-                        params = (jth,dth,jtd)
-                        self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
-                        print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f} | TIME STEPS: {time_step}")
+                            current_test += 1
+                            print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f} | TIME STEPS: {time_step}")
         return final_dists
 
 
@@ -323,10 +339,11 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(120,170,7),
+            jt_vals=np.linspace(90,170,7),
             dt_vals=[75],
-            jt_deltas=np.linspace(0.5,0.01,7),
-            n_tests=5
+            jt_deltas=[0],#np.linspace(0.5,0.01,7),
+            st_vals=[0.1,0.01,0],
+            n_tests=3
             )
         print("Starting game")
         dists = runner.train(500)

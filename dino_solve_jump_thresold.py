@@ -198,7 +198,7 @@ class DinoGame:
                             last_state = state
 
                             # Take a lil break
-                            time.sleep(0.1)
+                            time.sleep(0.01) #NOTE: Taking out the break for now
 
                             time_step += 1
                         
@@ -221,9 +221,9 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(130,150,5),
+            jt_vals=np.linspace(10,150,10).round(2),
             dt_vals=[75],
-            jt_deltas=np.linspace(0.1,0.05,5),
+            jt_deltas=[.01], #np.linspace(0.1,0.05,5).round(2),
             n_tests=3
             )
         print("Starting game")

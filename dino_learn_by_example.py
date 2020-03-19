@@ -37,6 +37,8 @@ from tensorflow.keras.layers import Dense, Dropout
 URL = 'chrome://dino/'
 CSS_RUNNER_CONTAINER = '.runner-container'
 
+REWARD_DECAY = 0.9
+
 dt_fmt = time.strftime("%Y%m%d.%H%M%S")
 
 class DinoGame:
@@ -67,7 +69,7 @@ class DinoGame:
             return results;
         })();"""
 
-   columns = [
+    columns = [
         "crashed",
         "distance",
 
@@ -93,8 +95,8 @@ class DinoGame:
     ]
     
 
-    INPUT_DIM = 30
-    ACTION_DIM = 2
+    INPUT_DIM = 15
+    ACTION_DIM = 3
 
     EPSILON_START = 1.0
     EPSILON_STOP = 0.01
@@ -102,7 +104,6 @@ class DinoGame:
 
     REWARD_DECAY = 0.5
 
-    # DB_PATH = "dino_memory2.db"
     DB_PATH = "dino_mem.db"
 
     @classmethod
@@ -130,56 +131,7 @@ class DinoGame:
         self.epsilon = self.EPSILON_START
 
         self.db = sqlite3.connect(self.DB_PATH)
-        c = self.db.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS Memory (
-            crashed REAL,
-            distance REAL,
 
-            tRexX REAL,
-            tRexY REAL,
-
-            speed REAL,
-
-            obs1X REAL,
-            obs1Y REAL,
-            obs1W REAL,
-            obs1H REAL,
-
-            obs2X REAL,
-            obs2Y REAL,
-            obs2W REAL,
-            obs2H REAL,
-
-            obs3X REAL,
-            obs3Y REAL,
-            obs3W REAL,
-            obs3H REAL,
-
-            last_tRexX REAL,
-            last_tRexY REAL,
-
-            last_speed REAL,
-
-            last_obs1X REAL,
-            last_obs1Y REAL,
-            last_obs1W REAL,
-            last_obs1H REAL,
-
-            last_obs2X REAL,
-            last_obs2Y REAL,
-            last_obs2W REAL,
-            last_obs2H REAL,
-
-            last_obs3X REAL,
-            last_obs3Y REAL,
-            last_obs3W REAL,
-            last_obs3H REAL,
-
-            action REAL,
-            reward REAL
-        );""")
-
-        self.memory = deque(maxlen=10_000_000)
         if brain is None:
             self.brain = self.make_brain()
         else:
@@ -223,7 +175,6 @@ class DinoGame:
 
     
     #### Dino Moves ####
-
     def move(self,m):
         if m == 0:
             self.move_pass()
@@ -247,10 +198,24 @@ class DinoGame:
         return self.driver.execute_script(self.FN)
 
     #### RL Functions ####
+    def get_rewards(self,hist):
+        rewards = []
+        last_r = 0
+        for s in hist[::-1]:
+            if s[0]:
+                r = -10
+            elif s[3] < 0:
+                r = 5
+            else:
+                r = 0
+            r += last_r * REWARD_DECAY
+            rewards.append(r)
+            last_r = r
+        return rewards[::-1]
 
-    def store_history(self,hist,rewards):
+    def store_history(self,hist,actions,rewards):
         c = self.db.cursor()
-        for s, r in zip(hist,rewards):
+        for s, a, r in zip(hist,actions,rewards):
             c.execute("""INSERT INTO "DinoGame" (
                     crashed,
                     distance,
@@ -269,14 +234,15 @@ class DinoGame:
                     o3Y,
                     o3W,
                     o3H,
+                    action,
                     reward
                 ) VALUES (
                     ?,?,?,?,?,
                     ?,?,?,?,?,
                     ?,?,?,?,?,
-                    ?,?,?
+                    ?,?,?,?
                 )""",
-                s + [r,]
+                s + [a,r]
                 )
         self.db.commit()
 
@@ -294,15 +260,16 @@ class DinoGame:
         self.action_hist[a] += 1
         return a
 
-    def replay(self,epochs=1,batch_size=128):
+    def replay(self,epochs=1,batch_size=256):
         c = self.db.cursor()
-        for e in range(epochs):
-            time.sleep(1)
-            data_in = []
-            data_out = []
-            for b in range(batch_size):
-                # Pick a random memory state
-                c.execute("""SELECT crashed,
+
+        c.execute("SELECT COUNT(*) FROM DinoGame;")
+        if c.fetchone()[0] < batch_size:
+            return
+        for _ in range(epochs):
+            c.execute("""
+                SELECT 
+                    crashed,
                     distance,
                     tRexX,
                     tRexY,
@@ -319,27 +286,41 @@ class DinoGame:
                     o3Y,
                     o3W,
                     o3H,
-                    reward FROM Memory ORDER BY Random() LIMIT 1;""")
-                s = np.array(c.fetchone())
+                    action,
+                    reward 
+                FROM 
+                    DinoGame 
+                ORDER BY 
+                    Random() 
+                LIMIT ?;""",(batch_size,))
+            
 
-                # Unpack the data
-                action, reward = s[-2:]
+            def decode_number(n):
+                try:
+                    return float(n)
+                except ValueError:
+                    return float(int.from_bytes(n,'little'))
 
-                # Get the brain's current prediction
-                model_in = np.array(s[2:-2])
-                pred = self.brain.predict(model_in.reshape((1,-1)))[0]
-                
-                # Update the reward
-                pred[int(action)] = reward
-                # pred = pred.reshape((1,-1))
+            data = [[decode_number(n) for n in l] for l in c.fetchall()]
+            data = np.array(data)
 
-                data_in.append(model_in)
-                data_out.append(pred)
+            actions, rewards = data[:,-2], data[:,-1]
+
+            try:
+                model_in = data[:,2:-2]
+                predictions = self.brain.predict(model_in)
+            except:
+                print(type(model_in))
+                print(model_in)
+                raise
+
+
+            predictions[:,actions.astype('int32')] = rewards
 
             # Retrain
             self.brain.fit(
-                np.array(data_in),
-                np.array(data_out),
+                model_in,
+                predictions,
                 epochs=1,
                 verbose=0
             )
@@ -354,15 +335,14 @@ class DinoGame:
             started = False
             time.sleep(1)
             done = False
-            mem_buff = []
 
-            last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
+            state_history = []
+            action_history = []
+
             while not done:
                 # Extract the positions
                 s = self.get_positions()
                 done, dist = s[:2]
-                tRexX = s[2]
-                obs1X = s[5]
                 
                 if done and not started:
                     done = False
@@ -372,54 +352,32 @@ class DinoGame:
                 elif not started:
                     started = True
                 
+                start_time = time.perf_counter()
                 # Choose an action
                 state = np.array(s[2:])
-                full_state = np.concatenate((
-                    state,
-                    last_state
-                ))
-                # print("State shape:",state.shape)
-                action = self.get_action(full_state)
+
+                # Get the action
+                action = self.get_action(state)
 
                 # Make the move
                 self.move(action)
 
-                # calculate reward
-                if done:
-                    reward = -10
-                else:
-                    reward = 0
-                    if action != 0:
-                        reward += 0 #-0.1
-                    if tRexX > obs1X:
-                        print("Good job! +5")
-                        reward += 5
-                        # print(s)
-                    
-
                 # store that information
-                mem_buff.append([s,last_state,action,reward])
-
-                # pass back the last state
-                last_state = state
+                state_history.append(s)
+                action_history.append(action)
 
                 # Take a lil break
-                time.sleep(0.1) # NOTE: adjust this time?
+                time_delta = time.perf_counter() - start_time
+                pause_time = 0.1 #0.01
+                time.sleep(max(0,pause_time-time_delta)) # NOTE: adjust this time?
+
             final_dists.append(dist)
-            
-            
-            # Update the past reward in mem_buff
-            for i in range(len(mem_buff)-2,-1,-1):
-                mem_buff[i][3] += mem_buff[i+1][3] * self.REWARD_DECAY
 
-            # add those to the full memory
-            for s, ls, action, reward in mem_buff:
-                self.memorize(s,ls,action,reward)
-
+            rewards = self.get_rewards(state_history)
+            self.store_history(state_history,action_history,rewards)
             self.replay(5)
 
-
-            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | AVG REWARD: {sum(s[2] for s in mem_buff)/len(mem_buff):5.2f}")
+            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | AVG REWARD: {sum(rewards)/len(rewards)}")
         return final_dists
 
     
@@ -428,7 +386,6 @@ class DinoGame:
             self.brain,
             filepath
             )
-
 
 
     
