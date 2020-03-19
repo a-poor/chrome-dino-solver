@@ -109,6 +109,7 @@ class DinoGame:
             o3Y REAL,
             o3W REAL,
             o3H REAL,
+            action REAL,
             reward REAL
         );"""
 
@@ -200,9 +201,9 @@ class DinoGame:
             last_r = r
         return rewards[::-1]
 
-    def store_history(self,hist,rewards):
+    def store_history(self,hist,act,rewards):
         c = self.db.cursor()
-        for s, r in zip(hist,rewards):
+        for s, a, r in zip(hist,act,rewards):
             c.execute("""INSERT INTO "DinoGame" (
                     crashed,
                     distance,
@@ -221,17 +222,17 @@ class DinoGame:
                     o3Y,
                     o3W,
                     o3H,
+                    action,
                     reward
                 ) VALUES (
                     ?,?,?,?,?,
                     ?,?,?,?,?,
                     ?,?,?,?,?,
-                    ?,?,?
+                    ?,?,?,?
                 )""",
-                s + [r,]
+                s + [a, r]
                 )
         self.db.commit()
-        pass
 
     #### Run Training Session ####
 
@@ -258,11 +259,11 @@ class DinoGame:
                         time_step = 0
 
                         state_history = []
+                        action_history = []
 
                         while not done:
                             # Extract the positions
                             s = self.get_positions()
-                            state_history.append(s)
                             done, dist = s[:2]
                             speed = s[4]
 
@@ -293,16 +294,20 @@ class DinoGame:
                             # Make the move
                             self.move(action)
 
+                            # Remember it
+                            state_history.append(s)
+                            action_history.append(action)
+
                             # pass back the last state
                             last_state = state
 
-                            # Take a lil break
-                            time.sleep(0.1)
+                            # # Take a lil break
+                            # time.sleep(0.1)
 
                             time_step += 1
 
                         rewards = self.get_rewards(state_history)
-                        self.store_history(state_history, rewards)
+                        self.store_history(state_history, action_history, rewards)
                         
                         current_test += 1
                         final_dists.append(dist)

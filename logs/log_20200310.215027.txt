@@ -1,9 +1,0 @@
-Best dist: 5494.719265509335
-Avg reward: 0.05206973062317519
-
-
-Action breakdown:
-2.0    9804
-1.0    5725
-0.0    1919
-Name: action, dtype: int64
