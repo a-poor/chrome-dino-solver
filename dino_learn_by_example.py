@@ -49,7 +49,7 @@ class DinoGame:
             const results = [];
             const runn = new Runner();
             results.push(runn.crashed? 1 : 0);
-            results.push(runn.distanceRan);
+            results.push(runn.distanceMeter.getActualDistance(runn.distanceRan));
             results.push(runn.tRex.xPos);
             results.push((runn.tRex.yPos));
             results.push(runn.currentSpeed);
@@ -198,16 +198,18 @@ class DinoGame:
         return self.driver.execute_script(self.FN)
 
     #### RL Functions ####
-    def get_rewards(self,hist):
+    def get_rewards(self,hist,acts):
         rewards = []
         last_r = 0
-        for s in hist[::-1]:
+        for s, a in zip(hist[::-1],acts[::-1]):
             if s[0]:
                 r = -10
             elif s[3] < 0:
                 r = 5
             else:
                 r = 0
+            if a > 0:
+                r += 0 #-0.5
             r += last_r * REWARD_DECAY
             rewards.append(r)
             last_r = r
@@ -352,7 +354,7 @@ class DinoGame:
                 elif not started:
                     started = True
                 
-                start_time = time.perf_counter()
+                # start_time = time.perf_counter()
                 # Choose an action
                 state = np.array(s[2:])
 
@@ -367,15 +369,17 @@ class DinoGame:
                 action_history.append(action)
 
                 # Take a lil break
-                time_delta = time.perf_counter() - start_time
-                pause_time = 0.1 #0.01
-                time.sleep(max(0,pause_time-time_delta)) # NOTE: adjust this time?
+                # time_delta = time.perf_counter() - start_time
+                # pause_time = 0.1 #0.01
+                # time.sleep(max(0,pause_time-time_delta)) # NOTE: adjust this time?
+
+                time.sleep(0.1)
 
             final_dists.append(dist)
 
-            rewards = self.get_rewards(state_history)
+            rewards = self.get_rewards(state_history,action_history)
             self.store_history(state_history,action_history,rewards)
-            self.replay(5)
+            self.replay(32)
 
             print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | AVG REWARD: {sum(rewards)/len(rewards)}")
         return final_dists

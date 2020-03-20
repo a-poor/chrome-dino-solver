@@ -46,7 +46,7 @@ class DinoGame:
             const results = [];
             const runn = new Runner();
             results.push(runn.crashed? 1 : 0);
-            results.push(runn.distanceRan);
+            results.push(runn.distanceMeter.getActualDistance(runn.distanceRan));
             results.push(runn.tRex.xPos);
             results.push((runn.tRex.yPos));
             results.push(runn.currentSpeed);

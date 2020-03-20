@@ -45,7 +45,7 @@ class DinoGame:
             const results = [];
             const runn = new Runner();
             results.push(runn.crashed? 1 : 0);
-            results.push(runn.distanceRan);
+            results.push(runn.distanceMeter.getActualDistance(runn.distanceRan));
             results.push(runn.tRex.xPos);
             results.push((runn.tRex.yPos));
             results.push(runn.currentSpeed);
@@ -202,16 +202,18 @@ class DinoGame:
         else:
             return 0
 
-    def get_rewards(self,hist):
+    def get_rewards(self,hist,acts):
         rewards = []
         last_r = 0
-        for s in hist[::-1]:
+        for s, a in zip(hist[::-1],acts[::-1]):
             if s[0]:
                 r = -10
             elif s[3] < 0:
                 r = 5
             else:
                 r = 0
+            if a > 0:
+                r += 0 #-0.5
             r += last_r * REWARD_DECAY
             rewards.append(r)
             last_r = r
@@ -325,7 +327,7 @@ class DinoGame:
 
                                 time_step += 1
 
-                            rewards = self.get_rewards(state_history)
+                            rewards = self.get_rewards(state_history,action_history)
                             self.store_history(state_history, action_history, rewards)
                         
                             current_test += 1
@@ -339,10 +341,10 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(90,170,7),
+            jt_vals=np.linspace(110,170,7),
             dt_vals=[75],
-            jt_deltas=[0],#np.linspace(0.5,0.01,7),
-            st_vals=[0.1,0.01,0],
+            jt_deltas=[0.075],#np.linspace(0.5,0.01,7),
+            st_vals=[0.1],
             n_tests=3
             )
         print("Starting game")
