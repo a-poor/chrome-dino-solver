@@ -39,18 +39,16 @@ class Game:
             results.push(runn.tRex.jumping? 1.0 : 0.0);
             results.push(runn.crashed? 1 : 0);
             results.push(runn.distanceMeter.getActualDistance(runn.distanceRan));
-            results.push(runn.tRex.xPos);
-            results.push((runn.tRex.yPos));
+            results.push(runn.tRex.xPos / 700.0);
+            results.push(runn.tRex.yPos /  90.0);
             results.push(runn.currentSpeed);
-
             if (runn.horizon.obstacles.length > 0) {
-                results.push(runn.horizon.obstacles[0].xPos);
-                results.push((runn.horizon.obstacles[0].yPos));
+                results.push(runn.horizon.obstacles[0].xPos / 700.0);
+                results.push(runn.horizon.obstacles[0].yPos /  90.0);
             } else {
-                results.push(700);
-                results.push(90);
+                results.push(1.0);
+                results.push(1.0);
             }
-
             return results;
         })();"""
 
@@ -58,6 +56,7 @@ class Game:
     def __init__(self):
         chrome_options = Options()
         chrome_options.add_argument("disable-infobars")
+        chrome_options.add_argument("--mute-audio")
         self.driver = webdriver.Chrome(
             './chromedriver',
             options=chrome_options
@@ -321,10 +320,10 @@ class DinoBrain:
 if __name__ == "__main__":
     dt_fmt = time.strftime("%Y%m%d.%H%M%S")
     pop = Population(
-        20,
+        40,
         0.9,
         0.01,
-        5,
+        10,
         3
     )
     pop.run(10)
