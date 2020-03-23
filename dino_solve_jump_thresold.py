@@ -47,6 +47,7 @@ class DinoGame:
             const runn = new Runner();
             results.push(runn.crashed? 1 : 0);
             results.push(runn.distanceMeter.getActualDistance(runn.distanceRan));
+            results.push(runn.tRex.jumping? 1.0 : 0.0);
             results.push(runn.tRex.xPos);
             results.push((runn.tRex.yPos));
             results.push(runn.currentSpeed);
@@ -159,13 +160,16 @@ class DinoGame:
                         time.sleep(1)
                         done = False
 
-                        last_state = np.array(self.get_positions()[2:]) #NOTE: get the last position
+                        last_state = np.array(self.get_positions()[3:]) #NOTE: get the last position
                         time_step = 0
+
+                        jt_delta_acc = 0
+
                         while not done:
                             # Extract the positions
                             s = self.get_positions()
-                            done, dist = s[:2]
-                            speed = s[4]
+                            done, dist, jumping = s[:3]
+                            speed = s[5]
 
                             dist_hist[-1].append((
                                 dist,
@@ -179,17 +183,24 @@ class DinoGame:
                                 continue
                             elif not started:
                                 started = True
+
+
+                            if jumping:
+                                continue
                             
                             # Choose an action
-                            state = np.array(s[2:])
+                            state = np.array(s[3:])
 
                             # print("State shape:",state.shape)
                             action = self.get_action(
                                 state,
                                 last_state,
-                                jth + time_step * jtd,
+                                jth + jt_delta_acc,
                                 dth
                                 )
+
+                            if speed < 12:
+                                jt_delta_acc += jtd
 
                             # Make the move
                             self.move(action)
@@ -198,7 +209,7 @@ class DinoGame:
                             last_state = state
 
                             # Take a lil break
-                            time.sleep(0.01) #NOTE: Taking out the break for now
+                            # time.sleep(0.01) #NOTE: Taking out the break for now
 
                             time_step += 1
                         
@@ -206,7 +217,7 @@ class DinoGame:
                         final_dists.append(dist)
                         params = (jth,dth,jtd)
                         self.thresh_data[params] = self.thresh_data.get(params,[]) + [dist]
-                        print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | JUMP THRESOLD: {jth:.2f} | DUCK THRESOLD: {dth:.2f} | TIME STEPS: {time_step}")
+                        print(f"EPISODE: {episode:3d} ({current_test:5d}/{total_tests}) | DISTANCE RAN: {dist:10.2f} | FINAL SPEED: {speed} | JUMP THRESOLD: {jth:.2f} | TIME STEPS: {time_step}")
         # for dh in dist_hist:
         #     dx, dy = zip(*dh)
         #     sns.scatterplot(dx,dy)
@@ -221,7 +232,7 @@ if __name__ == "__main__":
     print("building dino...")
     try:
         runner = DinoGame(
-            jt_vals=np.linspace(10,150,10).round(2),
+            jt_vals=np.linspace(50,150,10).round(2),
             dt_vals=[75],
             jt_deltas=[.01], #np.linspace(0.1,0.05,5).round(2),
             n_tests=3
