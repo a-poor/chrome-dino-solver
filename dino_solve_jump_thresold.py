@@ -79,6 +79,8 @@ class DinoGame:
 
         chrome_options = Options()
         chrome_options.add_argument("disable-infobars")
+        chrome_options.add_argument("--mute-audio")
+        
         self.driver = webdriver.Chrome(
             './chromedriver',
             options=chrome_options
