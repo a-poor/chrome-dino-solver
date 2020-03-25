@@ -69,12 +69,15 @@ class DinoGame:
 
     EPSILON_START = 1.0
     EPSILON_STOP = 0.01
-    EPSILON_DECAY = 0 #0.9
+    EPSILON_DECAY = 0.9
 
     REWARD_DECAY = 0.5
 
-    max_bad_scores = 30
-    min_score = 50
+    threshold = {
+        "jump":100,
+        "duck":75,
+        "delta":0
+    }
 
     @classmethod
     def load_brain(cls,model_path):
@@ -108,8 +111,6 @@ class DinoGame:
         self.memory = deque(maxlen=10_000_000)
         if brain is None:
             self.brain = self.make_brain()
-        elif isinstance(brain,str):
-            self.brain = load_model(brain)
         else:
             self.brain = brain
 
@@ -179,6 +180,14 @@ class DinoGame:
     def get_rewards(self,state):
         return self.brain.predict(state.reshape((1,-1)))[0]
 
+    def get_threshold_action(self,state,timestep):
+        if (state[3] < self.threshold['jump'] and 
+            state[4] > self.threshold['duck']):
+            a = 1
+        else:
+            a = 0
+        self.action_hist[a] += 1
+        return a
 
     def get_action(self,state):
         if np.random.random() < self.epsilon:
@@ -235,6 +244,72 @@ class DinoGame:
 
     #### Run Training Session ####
 
+    def teach(self,n_episodes=1):
+        for episode in range(n_episodes):
+            self.move_jump()
+            started = False
+            time.sleep(0.5)
+            done = False
+            self.action_hist = [0,0]
+
+            self.threshold = {
+                "jump":np.random.normal(140,10),
+                "duck":np.random.normal(75,1),
+                "delta":np.random.normal(0.01,0.001)
+            }
+
+            timestep = 0
+
+            while not done:
+                # Extract the positions
+                s = self.get_positions()
+                done, dist, jumping = s[:3]
+                state = np.array(s[3:])
+                
+                if done and not started:
+                    done = False
+                    self.move_jump()
+                    time.sleep(0.5)
+                    continue
+                elif not started:
+                    started = True
+
+                if jumping and not done:
+                    continue
+                
+                # Choose an action
+                action = self.get_threshold_action(state,timestep)
+
+                # Make the move
+                self.move(action)
+
+                # calculate reward
+                reward = self.calculate_reward(s)
+
+                # Take a lil break
+                # time.sleep(0.01) # NOTE: take this out?
+
+                # get next state
+                next_state = np.array(self.get_positions())[3:]
+                    
+                # store that information
+                self.memorize(
+                    [done,dist,jumping],
+                    state,
+                    next_state,
+                    action,
+                    reward
+                    )
+
+                timestep += 1
+
+            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | JUMP THRESHOLD: {self.threshold['jump']:.2f} | DUCK THRESHOLD: {self.threshold['duck']:.2f}")
+
+            self.update_epsilon()
+            self.replay(5)
+
+        return
+
     def train(self,n_episodes=5):
         final_dists = []
         self.epsilon = self.EPSILON_START
@@ -288,15 +363,15 @@ class DinoGame:
 
             final_dists.append(dist)
 
-            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | EPSILON: {self.epsilon:.4f} | ACTION HIST: {self.action_hist[0]}/{self.action_hist[1]}")
+            total = sum(self.action_hist)
+            if total:
+                actions = [round(a/total,4) for a in self.action_hist]
+            else:
+                actions = self.action_hist
+            print(f"EPISODE: {episode:3d} | DISTANCE RAN: {dist:10.2f} | EPSILON: {self.epsilon:.4f} | ACTIONS: {actions}")
 
-            # if sum(s < self.min_score for s in final_dists[-self.max_bad_scores:]) == self.max_bad_scores:
-                # pass
-                # self.brain = self.make_brain()
-                # self.memory.clear()
-                # print("hit a slump, restarting")
             self.update_epsilon()
-            self.replay(32)
+            self.replay(5)
 
         return final_dists
 
@@ -315,11 +390,12 @@ if __name__ == "__main__":
     print("Program starting")
     print("building dino...")
     try:
-        runner = DinoGame(
-            "models/brain_20200324.134138.h5"
-        )
+        runner = DinoGame()
         print("Starting game")
-        dists = runner.train(5000)
+        print("Teaching by example...")
+        runner.teach(5)
+        print("Training RL...")
+        dists = runner.train(1000)
     finally:
         runner.driver.close()
         print("Done")
