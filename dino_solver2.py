@@ -33,6 +33,8 @@ import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential, load_model, save_model
 from tensorflow.keras.layers import Dense, Dropout
 
+from generate_data import generate_data
+
 URL = 'chrome://dino/'
 CSS_RUNNER_CONTAINER = '.runner-container'
 
@@ -67,7 +69,7 @@ class DinoGame:
     INPUT_DIM = 5
     ACTION_DIM = 2
 
-    EPSILON_START = 1.0
+    EPSILON_START = 0.01 #1.0
     EPSILON_STOP = 0.01
     EPSILON_DECAY = 0 #0.9
 
@@ -78,8 +80,40 @@ class DinoGame:
 
     @classmethod
     def load_brain(cls,model_path):
-        return cls.__init__(load_model(model_path))
+        return DinoGame(load_model(model_path))
 
+    @classmethod
+    def pretrain_model(cls,n_datapoints):
+        print("Generating data...")
+        X, y = generate_data(n_datapoints)
+        print("Building dino-bot...")
+        b = DinoGame()
+        print("Fitting...")
+        b.brain.fit(
+            X,
+            y,
+            batch_size=min(n_datapoints,1028),
+            epochs=64,
+            verbose=0
+        )
+        print("Bot ready.")
+        return b
+
+    @classmethod
+    def pretrain_loaded_brain(cls,path,n_datapoints):
+        print("Generating data...")
+        X, y = generate_data(n_datapoints)
+        print("Building dino-bot...")
+        b = DinoGame.load_brain(path)
+        print("Fitting...")
+        b.brain.fit(
+            X,
+            y,
+            batch_size=min(n_datapoints,1028),
+            epochs=64,
+            verbose=0
+        )
+        print("Bot ready.")
 
     def __init__(self,brain=None):
         chrome_options = Options()
@@ -122,10 +156,20 @@ class DinoGame:
         except:
             pass # intentional
 
+    def pretrain(self,n_datapoints):
+        X, y = generate_data(n_datapoints)
+        self.brain.fit(
+            X,
+            y,
+            batch_size=min(n_datapoints,1028),
+            epochs=64,
+            verbose=0
+        )
+
     def make_brain(self):
         m = Sequential()
         m.add(Dense(
-            4,
+            16,
             activation="relu",
             input_shape=(self.INPUT_DIM,)
         ))
@@ -227,10 +271,10 @@ class DinoGame:
     def calculate_reward(self,full_state):
         reward = 0
         if full_state[0]:
-            reward -= 10
+            reward -= 100
         elif full_state[3] > full_state[6]:
             # print("Good job! +5")
-            reward += 5
+            reward += 50
         return reward
 
     #### Run Training Session ####
@@ -272,10 +316,19 @@ class DinoGame:
                 reward = self.calculate_reward(s)
 
                 # Take a lil break
-                time.sleep(0.01) # NOTE: take this out?
+                # time.sleep(0.01) # NOTE: take this out?
+
+                # Wait to stop jumping (instead of sleeping)
+                while True:
+                    next_state = np.array(self.get_positions())
+                    done = next_state[0]
+                    jumping = next_state[2]
+                    if not jumping or done:
+                        next_state = next_state[3:]
+                        break
 
                 # get next state
-                next_state = np.array(self.get_positions())[3:]
+                # next_state = np.array(self.get_positions())[3:]
                     
                 # store that information
                 self.memorize(
@@ -300,6 +353,78 @@ class DinoGame:
 
         return final_dists
 
+    def teach(self,jump_thresholds,duck_thresholds,jump_deltas,n_episodes):
+        total = len(jump_thresholds) * len(duck_thresholds) * len(jump_deltas) * n_episodes
+        current = 0
+        for jt in jump_thresholds:
+            for dt in duck_thresholds:
+                for jd in jump_deltas:
+                    for e in range(n_episodes):
+                        self.move_jump()
+                        time.sleep(0.5)
+                        started = False
+                        done = False
+                        delta = 0
+                        while not done:
+                            # Extract the positions
+                            s = self.get_positions()
+                            done, dist, jumping = s[:3]
+                            state = np.array(s[3:])
+                            tX, tY, speed, oX, oY = state
+
+                            if done and not started:
+                                done = False
+                                self.move_jump()
+                                time.sleep(0.5)
+                                continue
+                            elif not started:
+                                started = True
+
+                            # if jumping and not done:
+                            #     continue
+                            
+                            # Choose an action
+                            if oX < (jt + delta) and oY > dt:
+                                action = 1
+                            else:
+                                action = 0
+
+                            # Update the delta
+                            if speed < 12:
+                                delta += jd
+
+                            # Make the move
+                            self.move(action)
+
+                            # calculate reward
+                            reward = self.calculate_reward(s)
+
+                            # Take a lil break
+                            # time.sleep(0.01) # NOTE: take this out?
+
+                            # Wait to stop jumping (instead of sleeping)
+                            while True:
+                                next_state = np.array(self.get_positions())
+                                done = next_state[0]
+                                jumping = next_state[2]
+                                if not jumping or done:
+                                    next_state = next_state[3:]
+                                    break
+
+                            # get next state
+                            # next_state = np.array(self.get_positions())[3:]
+                                
+                            # store that information
+                            self.memorize(
+                                [done,dist,jumping],
+                                state,
+                                next_state,
+                                action,
+                                reward
+                                )
+                        current += 1
+                        print(f"({current:5d} / {total:5d}) | JT: {jt:.2f} | DT: {dt:.2f} | JD: {jd:.5f} | DISTANCE: {dist:5d}")
+
     
     def save_brain(self,filepath):
         save_model(
@@ -318,7 +443,15 @@ if __name__ == "__main__":
         runner = DinoGame(
             "models/brain_20200324.134138.h5"
         )
-        print("Starting game")
+        print("Pretraining...")
+        # runner.pretrain(100_000)
+        runner.teach(
+            jump_thresholds=np.linspace(50,200,5),
+            duck_thresholds=np.linspace(60,90,3),
+            jump_deltas=np.linspace(0.1,0,3),
+            n_episodes=1
+        )
+        print("Training...")
         dists = runner.train(5000)
     finally:
         runner.driver.close()
