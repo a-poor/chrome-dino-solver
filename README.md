@@ -9,12 +9,10 @@ _by Austin Poor_
 Using Reinforcement Learning and Selenium to play the Chrome No-Internet Dinosaur game.
 
 
-Here's a link to my presentation video:
+Below is a link to my presentation video:
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=vKNHtvma0bQ" target="_blank">
     <img width="300px" height="auto" src="presentation_visuals/video_thumbnail.png"/>
   </a>
 </p>
-
-[![presentation video thumbnail](presentati)](https://www.youtube.com/watch?v=vKNHtvma0bQ)
