@@ -4,16 +4,6 @@ dino_solver.py
 by Austin Poor
 
 
-
-NOTES:
-– Run for longer to see how it changes
-– can you scale the inputs? (how would you handle)
-– use more/less layers? to improve training?
-
-
-– run multiple training sessions simultaneously
-– run training headless in the cloud?
-
 """
 
 

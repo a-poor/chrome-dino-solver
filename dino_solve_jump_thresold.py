@@ -4,15 +4,11 @@ dino_solver.py
 by Austin Poor
 
 
+Plays the chrome-dino-game based on rules
+specified beforehand.
 
-NOTES:
-– Run for longer to see how it changes
-– can you scale the inputs? (how would you handle)
-– use more/less layers? to improve training?
-
-
-– run multiple training sessions simultaneously
-– run training headless in the cloud?
+Also used to find the proper thresholds to
+for deciding actions using grid-search.
 
 """
 

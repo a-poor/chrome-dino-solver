@@ -1,5 +1,14 @@
-import numpy as np
+"""
+generate_data.py
+created by Austin Poor
 
+a file for generating fake data for the model to learn from,
+based on the rules of the chrome-dino-game
+
+"""
+
+
+import numpy as np
 
 J_THRESHOLD = 160
 D_THRESHOLD = 75
