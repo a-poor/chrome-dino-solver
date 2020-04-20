@@ -7,7 +7,7 @@ by Austin Poor
 Plays the chrome-dino-game based on rules
 specified beforehand.
 
-Also used to find the proper thresholds to
+Also used to find the proper thresholds to use
 for deciding actions using grid-search.
 
 """

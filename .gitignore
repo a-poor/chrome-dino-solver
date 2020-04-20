@@ -4,3 +4,4 @@ venv/*
 chromedriver_mac64.zip
 chromedriver
 models/*
+__pycache__
