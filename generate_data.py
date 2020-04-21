@@ -5,6 +5,8 @@ created by Austin Poor
 a file for generating fake data for the model to learn from,
 based on the rules of the chrome-dino-game
 
+used by dino_solver_deepQ.py
+
 """
 
 
